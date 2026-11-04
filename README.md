@@ -5,6 +5,7 @@ A modern **full-stack library management system** built with **React, Spring Boo
 BookNest is a digital library platform that allows students to explore books, manage their borrowing activity, and provides administrators with tools to manage books, students, and library operations.
 
 🌐 **Live Demo:** https://booknestx.vercel.app/
+📘 **Case study:** [raqueeb.dev/projects/booknest](https://raqueeb.dev/projects/booknest)
 
 ---
 
