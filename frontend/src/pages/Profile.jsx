@@ -13,7 +13,7 @@ export default function Profile() {
   const [student, setStudent] = useState(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ fullName: "", username: "", email: "" });
+  const [form, setForm] = useState({ fullName: "", username: "", email: "", currentPassword: "" });
   const [borrowedCount, setBorrowedCount] = useState(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState(null);
@@ -35,6 +35,7 @@ export default function Profile() {
       fullName: parsed.name || "",
       username: parsed.username || "",
       email: parsed.email || "",
+      currentPassword: "",
     });
 
     if (parsed.id) {
@@ -44,8 +45,17 @@ export default function Profile() {
     }
   }, []);
 
+  // Changing a sign-in identifier needs the current password; changing only the
+  // display name does not.
+  const identityChanged =
+    !!student && (form.username !== (student.username || "") || form.email !== (student.email || ""));
+
   async function handleSave() {
     if (!student?.id) return;
+    if (identityChanged && !form.currentPassword) {
+      setError("Enter your current password to change your username or email.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -53,6 +63,7 @@ export default function Profile() {
         fullName: form.fullName,
         username: form.username,
         email: form.email,
+        ...(identityChanged ? { currentPassword: form.currentPassword } : {}),
       });
 
       const updated = {
@@ -62,6 +73,7 @@ export default function Profile() {
         email: res.data.email,
       };
       setStudent(updated);
+      setForm((f) => ({ ...f, currentPassword: "" }));
       localStorage.setItem("student", JSON.stringify(updated));
       setEditing(false);
       setToast("Profile updated");
@@ -178,6 +190,28 @@ export default function Profile() {
               editing={editing}
               onChange={(v) => setForm((f) => ({ ...f, email: v }))}
             />
+
+            {/* Username and email are sign-in credentials, so the server asks
+                for the current password before changing either. The field only
+                appears once one of them has actually been edited. */}
+            {editing && identityChanged && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-faint">
+                  Current password
+                </label>
+                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                  <KeyRound size={16} className="shrink-0 text-ink-faint" />
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={form.currentPassword}
+                    onChange={(e) => setForm((f) => ({ ...f, currentPassword: e.target.value }))}
+                    placeholder="Required to change your username or email"
+                    className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="relative mt-8 flex flex-wrap gap-3">
@@ -188,7 +222,7 @@ export default function Profile() {
                 </button>
                 <button
                   onClick={() => {
-                    setForm({ fullName: student?.name || "", username: student?.username || "", email: student?.email || "" });
+                    setForm({ fullName: student?.name || "", username: student?.username || "", email: student?.email || "", currentPassword: "" });
                     setEditing(false);
                     setError("");
                   }}
