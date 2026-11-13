@@ -1,148 +1,141 @@
 package com.library.backend.security;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Base64;
+import java.util.Date;
 
 /**
- * Minimal, dependency-free HMAC-SHA256 signed token generator/validator.
- * Produces a standard three-part JWT (header.payload.signature) using only
- * the JDK's built-in crypto and Base64 support, so no extra Maven
- * dependency is required.
+ * Issues and verifies the API's access tokens.
+ *
+ * <p>Two properties of this class matter for security:
+ *
+ * <ul>
+ *   <li><b>No role claim.</b> The token carries only the subject, the user id and
+ *       the token version. Authorities are read from the database on every
+ *       request (see {@link JwtAuthenticationFilter}), so a tampered token cannot
+ *       grant a role the account does not have.
+ *   <li><b>Verification is delegated to a maintained library</b> (JJWT), which
+ *       compares signatures in constant time, rejects an unexpected algorithm
+ *       rather than trusting the token's own header, and parses claims properly.
+ * </ul>
+ *
+ * <p>The signing key comes from {@code app.jwt.secret} and has no default: the
+ * application refuses to start without one. The value is never logged.
  */
 @Component
 public class JwtUtil {
 
-    private static final String HEADER_JSON = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+    /** HS256 keys must be at least 256 bits; a shorter secret is rejected at startup. */
+    private static final int MIN_SECRET_BYTES = 32;
 
-    @Value("${app.jwt.secret}")
-    private String secret;
+    public static final String CLAIM_USER_ID = "uid";
+    public static final String CLAIM_TOKEN_VERSION = "tv";
 
-    @Value("${app.jwt.expiration-ms}")
-    private long expirationMs;
+    private final SecretKey key;
+    private final long expirationMs;
 
-    public String generateToken(String username, String role, Long userId) {
-        long nowSeconds = Instant.now().getEpochSecond();
-        long expSeconds = nowSeconds + (expirationMs / 1000);
+    public JwtUtil(
+            @Value("${app.jwt.secret}") String secret,
+            @Value("${app.jwt.expiration-ms}") long expirationMs) {
 
-        String payloadJson = "{"
-                + "\"sub\":\"" + escape(username) + "\","
-                + "\"role\":\"" + escape(role) + "\","
-                + "\"uid\":" + userId + ","
-                + "\"iat\":" + nowSeconds + ","
-                + "\"exp\":" + expSeconds
-                + "}";
-
-        String headerB64 = base64UrlEncode(HEADER_JSON.getBytes(StandardCharsets.UTF_8));
-        String payloadB64 = base64UrlEncode(payloadJson.getBytes(StandardCharsets.UTF_8));
-        String signingInput = headerB64 + "." + payloadB64;
-        String signature = sign(signingInput);
-
-        return signingInput + "." + signature;
+        byte[] keyBytes = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            // The secret itself is never included in the message.
+            throw new IllegalStateException(
+                    "app.jwt.secret must be at least " + MIN_SECRET_BYTES
+                            + " bytes for HS256; the configured value is too short. "
+                            + "Set the JWT_SECRET environment variable to a long random string.");
+        }
+        if (expirationMs <= 0) {
+            throw new IllegalStateException("app.jwt.expiration-ms must be greater than zero");
+        }
+        this.key = Keys.hmacShaKeyFor(keyBytes);
+        this.expirationMs = expirationMs;
     }
 
+    /**
+     * @param tokenVersion the account's current token version; a password change
+     *                     increments it, which invalidates every token issued before.
+     */
+    public String generateToken(String username, Long userId, int tokenVersion) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .subject(username)
+                .claim(CLAIM_USER_ID, userId)
+                .claim(CLAIM_TOKEN_VERSION, tokenVersion)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusMillis(expirationMs)))
+                .signWith(key, Jwts.SIG.HS256)
+                .compact();
+    }
+
+    /**
+     * Verifies the signature, the algorithm, the expiry and the required claims.
+     *
+     * @throws JwtException if the token is malformed, unsigned, signed with another
+     *                      key or algorithm, expired, or missing a required claim
+     */
     public JwtClaims validateToken(String token) {
-        String[] parts = token.split("\\.");
-        if (parts.length != 3) {
-            throw new IllegalArgumentException("Malformed token");
+        Jws<Claims> jws = Jwts.parser()
+                .verifyWith(key)
+                // Only HS256 is accepted, whatever the token's own header says.
+                .sig().add(Jwts.SIG.HS256).and()
+                .build()
+                .parseSignedClaims(token);
+
+        if (!Jwts.SIG.HS256.getId().equals(jws.getHeader().getAlgorithm())) {
+            throw new JwtException("Unexpected token algorithm");
         }
 
-        String signingInput = parts[0] + "." + parts[1];
-        String expectedSignature = sign(signingInput);
-        if (!expectedSignature.equals(parts[2])) {
-            throw new IllegalArgumentException("Invalid token signature");
+        Claims claims = jws.getPayload();
+        String subject = claims.getSubject();
+        Long userId = claims.get(CLAIM_USER_ID, Number.class) == null
+                ? null
+                : claims.get(CLAIM_USER_ID, Number.class).longValue();
+        Integer tokenVersion = claims.get(CLAIM_TOKEN_VERSION, Number.class) == null
+                ? null
+                : claims.get(CLAIM_TOKEN_VERSION, Number.class).intValue();
+
+        if (subject == null || subject.isBlank() || userId == null || tokenVersion == null
+                || claims.getExpiration() == null) {
+            throw new JwtException("Token is missing a required claim");
         }
 
-        String payloadJson = new String(base64UrlDecode(parts[1]), StandardCharsets.UTF_8);
-
-        String username = extractStringField(payloadJson, "sub");
-        String role = extractStringField(payloadJson, "role");
-        Long userId = extractLongField(payloadJson, "uid");
-        long exp = extractLongField(payloadJson, "exp");
-
-        if (Instant.now().getEpochSecond() > exp) {
-            throw new IllegalArgumentException("Token has expired");
-        }
-
-        return new JwtClaims(username, role, userId);
+        return new JwtClaims(subject, userId, tokenVersion);
     }
 
-    private String sign(String data) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] rawHmac = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-            return base64UrlEncode(rawHmac);
-        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-            throw new IllegalStateException("Could not sign token", e);
-        }
-    }
-
-    private static String base64UrlEncode(byte[] bytes) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private static byte[] base64UrlDecode(String value) {
-        return Base64.getUrlDecoder().decode(value);
-    }
-
-    private static String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static String extractStringField(String json, String field) {
-        String marker = "\"" + field + "\":\"";
-        int start = json.indexOf(marker);
-        if (start == -1) {
-            return null;
-        }
-        start += marker.length();
-        int end = json.indexOf('"', start);
-        return json.substring(start, end);
-    }
-
-    private static long extractLongField(String json, String field) {
-        String marker = "\"" + field + "\":";
-        int start = json.indexOf(marker);
-        if (start == -1) {
-            throw new IllegalArgumentException("Missing field: " + field);
-        }
-        start += marker.length();
-        int end = start;
-        while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) {
-            end++;
-        }
-        return Long.parseLong(json.substring(start, end));
-    }
-
+    /** The verified claims this application relies on. Deliberately carries no role. */
     public static class JwtClaims {
-        private final String username;
-        private final String role;
-        private final Long userId;
 
-        public JwtClaims(String username, String role, Long userId) {
+        private final String username;
+        private final Long userId;
+        private final int tokenVersion;
+
+        public JwtClaims(String username, Long userId, int tokenVersion) {
             this.username = username;
-            this.role = role;
             this.userId = userId;
+            this.tokenVersion = tokenVersion;
         }
 
         public String getUsername() {
             return username;
         }
 
-        public String getRole() {
-            return role;
-        }
-
         public Long getUserId() {
             return userId;
+        }
+
+        public int getTokenVersion() {
+            return tokenVersion;
         }
     }
 }

@@ -51,6 +51,18 @@ public class Student {
     @Column(updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    /**
+     * Incremented whenever every token already issued for this account must stop
+     * working (currently: a password change). A token carries the value it was
+     * issued with, and a request is rejected once the two differ.
+     *
+     * <p>Nullable on purpose: rows that existed before this column was added read
+     * as null, which {@link #currentTokenVersion()} treats as version 0. That
+     * keeps the schema change backward compatible with the production data.
+     */
+    @Column(name = "token_version")
+    private Integer tokenVersion = 0;
+
     public Student() {
     }
 
@@ -107,6 +119,24 @@ public class Student {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    /** The stored token version, with null (a row predating the column) meaning 0. */
+    public int currentTokenVersion() {
+        return tokenVersion == null ? 0 : tokenVersion;
+    }
+
+    /** Invalidates every token issued for this account so far. */
+    public void invalidateIssuedTokens() {
+        this.tokenVersion = currentTokenVersion() + 1;
+    }
+
+    public Integer getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(Integer tokenVersion) {
+        this.tokenVersion = tokenVersion;
     }
 
     public LocalDateTime getCreatedAt() {

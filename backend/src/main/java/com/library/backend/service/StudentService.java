@@ -63,7 +63,10 @@ public class StudentService {
     }
 
     private AuthResponse buildAuthResponse(Student student) {
-        String token = jwtUtil.generateToken(student.getUsername(), student.getRole().name(), student.getId());
+        // The token carries no role: authorities are read from the database on
+        // every request, so the response's role is for the interface only.
+        String token = jwtUtil.generateToken(
+                student.getUsername(), student.getId(), student.currentTokenVersion());
         return new AuthResponse(
                 student.getId(),
                 student.getUsername(),
@@ -86,32 +89,44 @@ public class StudentService {
     public Student updateStudent(Long id, StudentUpdateRequest request) {
         Student student = getStudentById(id);
 
+        boolean changesUsername = request.getUsername() != null && !request.getUsername().isBlank()
+                && !request.getUsername().equals(student.getUsername());
+        boolean changesEmail = request.getEmail() != null && !request.getEmail().isBlank()
+                && !request.getEmail().equals(student.getEmail());
+        boolean changesPassword = request.getNewPassword() != null && !request.getNewPassword().isBlank();
+
+        // The sign-in identifiers and the password are all credentials: changing
+        // any of them requires proving the current one, so a borrowed session
+        // cannot quietly take the account over.
+        if (changesUsername || changesEmail || changesPassword) {
+            if (request.getCurrentPassword() == null
+                    || !passwordEncoder.matches(request.getCurrentPassword(), student.getPassword())) {
+                throw new BadRequestException("Current password is incorrect");
+            }
+        }
+
         if (request.getFullName() != null && !request.getFullName().isBlank()) {
             student.setFullName(request.getFullName());
         }
 
-        if (request.getUsername() != null && !request.getUsername().isBlank()
-                && !request.getUsername().equals(student.getUsername())) {
+        if (changesUsername) {
             if (studentRepository.existsByUsername(request.getUsername())) {
                 throw new BadRequestException("Username is already taken");
             }
             student.setUsername(request.getUsername());
         }
 
-        if (request.getEmail() != null && !request.getEmail().isBlank()
-                && !request.getEmail().equals(student.getEmail())) {
+        if (changesEmail) {
             if (studentRepository.existsByEmail(request.getEmail())) {
                 throw new BadRequestException("An account with this email already exists");
             }
             student.setEmail(request.getEmail());
         }
 
-        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
-            if (request.getCurrentPassword() == null
-                    || !passwordEncoder.matches(request.getCurrentPassword(), student.getPassword())) {
-                throw new BadRequestException("Current password is incorrect");
-            }
+        if (changesPassword) {
             student.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            // Every token issued before this moment stops working.
+            student.invalidateIssuedTokens();
         }
 
         return studentRepository.save(student);

@@ -1,5 +1,6 @@
 package com.library.backend.repository;
 
+import com.library.backend.model.Role;
 import com.library.backend.model.Student;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,4 +18,7 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     boolean existsByUsername(String username);
 
     boolean existsByEmail(String email);
+
+    /** Used by the seeder to decide whether an administrator already exists. */
+    boolean existsByRole(Role role);
 }

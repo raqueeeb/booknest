@@ -1,6 +1,6 @@
 # 📚 BookNest
 
-A modern **full-stack library management system** built with **React, Spring Boot, and SQLite**.
+A modern **full-stack library management system** built with **React, Spring Boot, and PostgreSQL**.
 
 BookNest is a digital library platform that allows students to explore books, manage their borrowing activity, and provides administrators with tools to manage books, students, and library operations.
 
@@ -65,10 +65,11 @@ BookNest is a digital library platform that allows students to explore books, ma
 ## Database
 
 <p>
-<img src="https://skillicons.dev/icons?i=sqlite" />
+<img src="https://skillicons.dev/icons?i=postgres" />
 </p>
 
-- SQLite
+- PostgreSQL (production and local)
+- Optional MySQL profile for local development
 - Hibernate ORM
 
 ---
@@ -131,7 +132,7 @@ BookNest
 └── backend
     ├── Spring Boot
     ├── Java
-    └── SQLite
+    └── PostgreSQL
 ```
 
 ---
@@ -167,6 +168,72 @@ mvn spring-boot:run
 ```
 
 ---
+
+# ⚙️ Configuration
+
+Every credential comes from the environment. Nothing is committed, and no
+setting has a fallback value, so the application fails to start rather than run
+on a credential baked into the source.
+
+Copy `.env.example` to `.env`, fill it in locally, and keep it out of Git
+(`.env` is already ignored). In production these are set in the hosting
+dashboard's environment settings instead.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `DATABASE_USERNAME` | yes | Database user |
+| `DATABASE_PASSWORD` | yes | Database password |
+| `JWT_SECRET` | yes | Token signing key, **at least 32 characters** |
+| `ADMIN_USERNAME` | first run only | Username for the initial administrator |
+| `ADMIN_PASSWORD` | first run only | Password for the initial administrator |
+| `APP_CORS_ALLOWED_ORIGINS` | no | Comma-separated browser origins; defaults to the deployed frontend and localhost |
+| `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD` | `mysql` profile only | Optional local MySQL |
+
+Generate a signing key with:
+
+```bash
+openssl rand -base64 48
+```
+
+The administrator settings are used **only when the database contains no
+administrator**. Once one exists they are ignored, and an account that already
+exists under that username is never promoted. Leave them unset on an instance
+that already has an administrator.
+
+To run against local MySQL instead of PostgreSQL:
+
+```bash
+cd backend
+MYSQL_URL=... MYSQL_USERNAME=... MYSQL_PASSWORD=... \
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles=mysql
+```
+
+---
+
+# 🔐 Security notes
+
+- **Authentication** is a stateless bearer token signed with HMAC-SHA256 by a
+  maintained JWT library, which verifies the signature and the algorithm rather
+  than trusting the token's own header.
+- **Authorization never trusts the token.** A token identifies the account; the
+  role is read from the database on every request. A tampered token therefore
+  cannot grant privileges, and a role change applies to the very next request.
+- **Tokens can be invalidated.** Each account carries a token version that a
+  password change increments, which retires every token issued before it. A
+  token for a deleted account is refused.
+- **Passwords** are stored as bcrypt hashes and never appear in API responses.
+  Changing a username, email or password requires the current password.
+- **CORS** allows only the configured origins.
+
+Run the security regression suite with:
+
+```bash
+cd backend
+./mvnw test
+```
+
+It runs against an in-memory database and needs no credentials.
 
 # 📚 Application Modules
 
@@ -209,7 +276,7 @@ Handles:
 **Mohammed Abdul Raqueeb**
 
 GitHub:
-https://github.com/Mohammed-Abdul-Raqueeb
+https://github.com/raqueeeb
 
 ---
 
