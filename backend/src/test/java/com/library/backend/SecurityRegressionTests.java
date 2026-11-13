@@ -1,5 +1,6 @@
 package com.library.backend;
 
+import com.library.backend.config.AdminPasswordReset;
 import com.library.backend.config.DataSeeder;
 import com.library.backend.model.Role;
 import com.library.backend.model.Student;
@@ -305,6 +306,79 @@ class SecurityRegressionTests {
 
         assertThat(students.findByUsername("ordinary").orElseThrow().getRole())
                 .isEqualTo(Role.STUDENT);
+    }
+
+    // ------------------------------------------------- emergency admin reset
+
+    @Test
+    @DisplayName("reset: changes an administrator's password and ends existing sessions")
+    void emergencyResetChangesAdminPassword() throws Exception {
+        Student admin = makeAdmin("resetme", "forgotten-password");
+        String oldToken = tokenFor(admin);
+        mvc.perform(get("/api/students").header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isOk());
+
+        runReset("resetme", "a-fresh-password");
+
+        Student after = students.findByUsername("resetme").orElseThrow();
+        assertThat(passwordEncoder.matches("a-fresh-password", after.getPassword())).isTrue();
+        assertThat(after.getRole()).isEqualTo(Role.ADMIN);
+
+        // The old session is over.
+        mvc.perform(get("/api/students").header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/students").header("Authorization", "Bearer " + tokenFor(after)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("reset: repeating it changes nothing and does not sign anyone out")
+    void emergencyResetIsIdempotent() throws Exception {
+        Student admin = makeAdmin("steady", "original-password");
+        runReset("steady", "new-password");
+
+        Student afterFirst = students.findByUsername("steady").orElseThrow();
+        String hashAfterFirst = afterFirst.getPassword();
+        int versionAfterFirst = afterFirst.currentTokenVersion();
+        String token = tokenFor(afterFirst);
+
+        runReset("steady", "new-password");
+
+        Student afterSecond = students.findByUsername("steady").orElseThrow();
+        assertThat(afterSecond.getPassword()).isEqualTo(hashAfterFirst);
+        assertThat(afterSecond.currentTokenVersion()).isEqualTo(versionAfterFirst);
+        mvc.perform(get("/api/students").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("reset: refuses a student account, and is dormant unless asked for")
+    void emergencyResetRefusesNonAdmins() throws Exception {
+        register("justastudent", "password123");
+        String hashBefore = students.findByUsername("justastudent").orElseThrow().getPassword();
+
+        runReset("justastudent", "attempted-takeover");
+
+        Student after = students.findByUsername("justastudent").orElseThrow();
+        assertThat(after.getRole()).isEqualTo(Role.STUDENT);
+        assertThat(after.getPassword()).isEqualTo(hashBefore);
+
+        // Unknown account: nothing is created.
+        runReset("nobody-at-all", "irrelevant");
+        assertThat(students.findByUsername("nobody-at-all")).isEmpty();
+
+        // Dormant when no username is configured.
+        Student admin = makeAdmin("untouched", "keep-this-password");
+        runReset("", "would-have-changed-it");
+        assertThat(students.findById(admin.getId()).orElseThrow().getPassword())
+                .isEqualTo(admin.getPassword());
+    }
+
+    private void runReset(String username, String password) {
+        AdminPasswordReset reset = new AdminPasswordReset(students, passwordEncoder);
+        ReflectionTestUtils.setField(reset, "resetUsername", username);
+        ReflectionTestUtils.setField(reset, "newPassword", password);
+        reset.run();
     }
 
     @Test

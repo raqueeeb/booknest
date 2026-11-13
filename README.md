@@ -187,6 +187,7 @@ dashboard's environment settings instead.
 | `JWT_SECRET` | yes | Token signing key, **at least 32 characters** |
 | `ADMIN_USERNAME` | first run only | Username for the initial administrator |
 | `ADMIN_PASSWORD` | first run only | Password for the initial administrator |
+| `ADMIN_PASSWORD_RESET` | emergency only | Administrator username whose password should be reset to `ADMIN_PASSWORD` at startup |
 | `APP_CORS_ALLOWED_ORIGINS` | no | Comma-separated browser origins; defaults to the deployed frontend and localhost |
 | `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD` | `mysql` profile only | Optional local MySQL |
 
@@ -208,6 +209,24 @@ cd backend
 MYSQL_URL=... MYSQL_USERNAME=... MYSQL_PASSWORD=... \
   ./mvnw spring-boot:run -Dspring-boot.run.profiles=mysql
 ```
+
+
+## Changing the administrator password
+
+Sign in as the administrator, open **My account** in the console sidebar, and
+use **Change password**. The current password is required, and changing it signs
+out every existing session for that account.
+
+If nobody can sign in, reset it from the hosting dashboard instead:
+
+1. Set `ADMIN_PASSWORD` to the new password and `ADMIN_PASSWORD_RESET` to the
+   administrator's username.
+2. Restart the service. The password is reset and existing sessions end.
+3. **Delete both variables** and restart again. While they remain set, a later
+   restart would undo a password changed inside the application.
+
+The reset only ever touches an existing administrator: it will not create an
+account and will not promote a student.
 
 ---
 

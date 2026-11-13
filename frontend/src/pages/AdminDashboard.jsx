@@ -7,6 +7,7 @@ import {
   Users,
   BookMarked,
   LogOut,
+  UserCog,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -71,6 +72,16 @@ export default function AdminDashboard() {
           ))}
         </nav>
 
+        {/* The account page is where an administrator changes their own
+            password. It was reachable only by typing the URL, which left no
+            way to rotate the password from the console. */}
+        <button
+          onClick={() => navigate("/profile")}
+          className="mx-3 mb-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-white/[0.06] hover:text-ink"
+        >
+          <UserCog size={17} /> My account
+        </button>
+
         <button
           onClick={handleLogout}
           className="mx-3 mb-5 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-signal-fine transition-colors hover:bg-signal-fine/10"
@@ -92,7 +103,13 @@ export default function AdminDashboard() {
             <Icon size={14} /> {label}
           </button>
         ))}
-        <button onClick={handleLogout} className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-signal-fine">
+        <button
+          onClick={() => navigate("/profile")}
+          className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-ink-muted"
+        >
+          <UserCog size={14} /> Account
+        </button>
+        <button onClick={handleLogout} className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-signal-fine">
           <LogOut size={14} /> Log out
         </button>
       </div>
