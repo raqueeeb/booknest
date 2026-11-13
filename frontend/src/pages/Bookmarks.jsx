@@ -40,7 +40,7 @@ export default function Bookmarks() {
     }
     try {
       const book = bookmarks.find((b) => b.id === bookId);
-      await API.post(`/borrow/${student.id}/${bookId}`);
+      await API.post(`/api/borrow/${student.id}/${bookId}`);
       setBookmarks((prev) => {
         const next = prev.map((b) => (b.id === bookId ? { ...b, available: false } : b));
         localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(next));

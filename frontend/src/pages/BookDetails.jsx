@@ -45,7 +45,7 @@ export default function BookDetails() {
       try {
         setLoading(true);
         setError("");
-        const res = await API.get(`/books/${id}`);
+        const res = await API.get(`/api/books/${id}`);
         if (!cancelled) setBook(res.data);
       } catch (err) {
         if (!cancelled) {
@@ -86,7 +86,7 @@ export default function BookDetails() {
     if (!book?.available || borrowing) return;
     try {
       setBorrowing(true);
-      await API.post(`/borrow/${student.id}/${book.id}`);
+      await API.post(`/api/borrow/${student.id}/${book.id}`);
       setBook((prev) => ({ ...prev, available: false }));
       setToast(`Borrowed "${book.title}"`);
     } catch (err) {

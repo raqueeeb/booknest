@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/check-api-paths.mjs && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:api-paths": "node scripts/check-api-paths.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -38,7 +38,7 @@ export default function Profile() {
     });
 
     if (parsed.id) {
-      API.get(`/borrow/student/${parsed.id}`)
+      API.get(`/api/borrow/student/${parsed.id}`)
         .then((res) => setBorrowedCount((res.data || []).filter((r) => !r.returned).length))
         .catch(() => setBorrowedCount(null));
     }
@@ -49,7 +49,7 @@ export default function Profile() {
     setSaving(true);
     setError("");
     try {
-      const res = await API.put(`/students/${student.id}`, {
+      const res = await API.put(`/api/students/${student.id}`, {
         fullName: form.fullName,
         username: form.username,
         email: form.email,
@@ -87,7 +87,7 @@ export default function Profile() {
 
     setPasswordSaving(true);
     try {
-      await API.put(`/students/${student.id}`, {
+      await API.put(`/api/students/${student.id}`, {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       });
